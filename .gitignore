@@ -1,0 +1,103 @@
+# General OS junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.orig
+
+# IDE / Editor
+.idea/
+.vscode/
+*.iml
+.fleet/
+
+# Logs
+*.log
+logs/
+
+# Python (if present)
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.venv/
+venv/
+ENV/
+env/
+pip-wheel-metadata/
+dist/
+build/
+
+# Dart / Flutter
+.dart_tool/
+.packages
+.pub/
+.pub-cache/
+pubspec.lock
+!/mobile_app/pubspec.lock
+# Keep the Flutter app's lockfile checked in; ignore others by default
+
+# Flutter build outputs
+build/
+coverage/
+
+# Android (Flutter)
+**/android/.gradle/
+**/android/local.properties
+**/android/**/captures/
+**/android/**/build/
+**/android/**/.idea/
+**/android/**/*.iml
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# iOS (Flutter)
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/ephemeral/
+**/ios/.symlinks/
+**/ios/Pods/
+**/ios/.generated/
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/ios/**/xcuserdata/
+**/*.xcuserstate
+
+# macOS (if added)
+**/macos/Flutter/ephemeral/
+**/macos/.symlinks/
+**/macos/Pods/
+**/macos/**/xcuserdata/
+
+# Xcode workspace noise
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# CocoaPods (keep lockfile; ignore build artifacts)
+**/.bundle/
+**/vendor/bundle/
+**/Pods/
+!**/Podfile
+!**/Podfile.lock
+
+# Generated artifacts
+flutter_export_environment.sh
+
+# App artifacts (runtime)
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tiff
+*.heic
+/mobile_app/scans/
+

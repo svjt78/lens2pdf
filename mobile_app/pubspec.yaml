@@ -1,0 +1,27 @@
+name: image_to_pdf_scanner
+description: Cross-platform document scanner with OpenCV processing and PDF export.
+publish_to: 'none'
+version: 1.0.0+1
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: any
+  path_provider: any
+  permission_handler: any
+  share_plus: any
+  pdf: any
+  printing: any
+  collection: any
+  image_picker: any
+  file_picker: any
+  path: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
