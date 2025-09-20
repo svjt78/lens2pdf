@@ -1,11 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../services/pdf_service.dart';
 import '../services/share_service.dart';
 import '../services/cv_service.dart';
 import '../services/settings_service.dart';
+import '../services/ocr_service.dart';
+import '../services/receipt_intel.dart';
 import 'pdf_view_screen.dart';
 
 class ExportScreen extends StatefulWidget {
@@ -23,6 +26,9 @@ class _ExportScreenState extends State<ExportScreen> {
   List<String> _images = const [];
   String? _lastPath;
   bool _defaultsLoaded = false;
+  ReceiptIntelResult? _receipt;
+  bool _receiptLoading = false;
+  String? _receiptError;
 
   @override
   void didChangeDependencies() {
@@ -39,6 +45,36 @@ class _ExportScreenState extends State<ExportScreen> {
           _mode = s.mode;
         });
       });
+    }
+
+    if (_images.isNotEmpty && !_receiptLoading && _receipt == null) {
+      _runReceiptIntel();
+    }
+  }
+
+  Future<void> _runReceiptIntel() async {
+    setState(() {
+      _receiptLoading = true;
+      _receiptError = null;
+    });
+    try {
+      final pages = await OcrService.recognizeBatch(_images);
+      final result = await ReceiptIntelService.analyze(pages);
+      if (!mounted) return;
+      setState(() {
+        _receipt = result;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _receiptError = 'Receipt analysis failed';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _receiptLoading = false;
+        });
+      }
     }
   }
 
@@ -57,10 +93,11 @@ class _ExportScreenState extends State<ExportScreen> {
         imagePaths: processed,
         quality: _quality,
         mode: _mode,
+        receipt: _receipt,
       );
+      if (!mounted) return;
       setState(() => _lastPath = out.path);
 
-      if (!mounted) return;
       // Notify user with quick actions.
       final path = out.path;
       // Offer share targets immediately
@@ -148,10 +185,13 @@ class _ExportScreenState extends State<ExportScreen> {
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) async {
+              final messenger = ScaffoldMessenger.of(context);
               if (value == 'save') {
-                await SettingsService.save(Settings(quality: _quality, mode: _mode));
+                await SettingsService.save(
+                    Settings(quality: _quality, mode: _mode));
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved as default')));
+                messenger.showSnackBar(
+                    const SnackBar(content: Text('Saved as default')));
               } else if (value == 'load') {
                 final s = await SettingsService.load();
                 if (!mounted) return;
@@ -159,7 +199,8 @@ class _ExportScreenState extends State<ExportScreen> {
                   _quality = s.quality;
                   _mode = s.mode;
                 });
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Loaded defaults')));
+                messenger.showSnackBar(
+                    const SnackBar(content: Text('Loaded defaults')));
               }
             },
             itemBuilder: (context) => const [
@@ -174,6 +215,19 @@ class _ExportScreenState extends State<ExportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_receiptLoading)
+              const LinearProgressIndicator(minHeight: 2),
+            if (_receiptError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _receiptError!,
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              )
+            else if (_receipt != null)
+              _ReceiptSummary(receipt: _receipt!),
+            const SizedBox(height: 12),
             const Text('Color Mode'),
             SegmentedButton<ColorMode>(
               segments: const [
@@ -195,7 +249,9 @@ class _ExportScreenState extends State<ExportScreen> {
               onChanged: (v) => setState(() => _quality = v.toInt()),
             ),
             const Spacer(),
-            if (_lastPath != null) Text('Last export: ${_lastPath!}', maxLines: 2, overflow: TextOverflow.ellipsis),
+            if (_lastPath != null)
+              Text('Last export: ${_lastPath!}',
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -203,7 +259,9 @@ class _ExportScreenState extends State<ExportScreen> {
                   child: FilledButton.icon(
                     onPressed: _busy ? null : _export,
                     icon: const Icon(Icons.picture_as_pdf),
-                    label: _busy ? const Text('Exporting...') : const Text('Export PDF'),
+                    label: _busy
+                        ? const Text('Exporting...')
+                        : const Text('Export PDF'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -219,13 +277,59 @@ class _ExportScreenState extends State<ExportScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _lastPath == null || _busy
                         ? null
-                        : () => Navigator.pushNamed(context, PdfViewScreen.route, arguments: _lastPath),
+                        : () => Navigator.pushNamed(
+                              context,
+                              PdfViewScreen.route,
+                              arguments: PdfViewArgs(
+                                path: _lastPath!,
+                                createdAt: DateTime.now(),
+                                receipt: _receipt,
+                              ),
+                            ),
                     icon: const Icon(Icons.visibility),
                     label: const Text('View'),
                   ),
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiptSummary extends StatelessWidget {
+  final ReceiptIntelResult receipt;
+  const _ReceiptSummary({required this.receipt});
+
+  @override
+  Widget build(BuildContext context) {
+    String? dateText;
+    if (receipt.purchaseDate != null) {
+      dateText = DateFormat.yMMMd().format(receipt.purchaseDate!);
+    }
+    String? totalText;
+    if (receipt.total?.value != null) {
+      totalText = NumberFormat.simpleCurrency().format(receipt.total!.value);
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Receipt Intel',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            if (receipt.vendor != null)
+              Text('Vendor: ${receipt.vendor}'),
+            if (dateText != null) Text('Date: $dateText'),
+            if (totalText != null) Text('Total: $totalText'),
+            if (receipt.paymentMethod != null)
+              Text('Payment: ${receipt.paymentMethod}'
+                  '${receipt.last4 != null ? ' • ${receipt.last4}' : ''}'),
+            Text('Confidence: ${(receipt.confidence * 100).round()}%'),
           ],
         ),
       ),

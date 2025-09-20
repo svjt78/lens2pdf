@@ -6,8 +6,14 @@ import 'package:share_plus/share_plus.dart';
 class ShareService {
   static const MethodChannel _channel = MethodChannel('share_targets');
 
-  static Future<void> shareFile(File file, {String? subject, String? text}) async {
-    final xfile = XFile(file.path, mimeType: 'application/pdf', name: file.uri.pathSegments.last);
+  static Future<void> shareFile(File file,
+      {String? subject, String? text}) async {
+    final xfile = XFile(
+      file.path,
+      mimeType: 'application/pdf',
+      name: file.uri.pathSegments.last,
+    );
+    // ignore: deprecated_member_use
     await Share.shareXFiles([xfile], subject: subject, text: text);
   }
 
@@ -23,7 +29,8 @@ class ShareService {
     }
   }
 
-  static Future<void> shareEmail(File file, {String? subject, String? body}) async {
+  static Future<void> shareEmail(File file,
+      {String? subject, String? body}) async {
     try {
       await _channel.invokeMethod('email', {
         'path': file.path,

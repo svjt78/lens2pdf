@@ -26,7 +26,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   void _toExport() {
-    Navigator.pushNamed(context, ExportScreen.route, arguments: _images.toList());
+    Navigator.pushNamed(context, ExportScreen.route,
+        arguments: _images.toList());
   }
 
   @override
@@ -49,15 +50,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
               itemCount: _images.length,
               onReorder: (oldIndex, newIndex) {
                 if (newIndex > oldIndex) newIndex--;
-                setState(() => _images.insert(newIndex, _images.removeAt(oldIndex)));
+                setState(
+                    () => _images.insert(newIndex, _images.removeAt(oldIndex)));
               },
               itemBuilder: (context, index) {
                 final path = _images[index];
                 return Card(
                   key: ValueKey(path),
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: ListTile(
-                    leading: Image.file(File(path), width: 64, height: 64, fit: BoxFit.cover),
+                    leading: Image.file(File(path),
+                        width: 64, height: 64, fit: BoxFit.cover),
                     title: Text('Page ${index + 1}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete),

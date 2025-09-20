@@ -11,7 +11,8 @@ class PickResult {
   final List<String> images;
   final List<String> pdfs;
   final List<String> skipped;
-  const PickResult({this.images = const [], this.pdfs = const [], this.skipped = const []});
+  const PickResult(
+      {this.images = const [], this.pdfs = const [], this.skipped = const []});
 }
 
 class PickerService {
@@ -28,7 +29,8 @@ class PickerService {
     final out = <String>[];
     for (final x in media) {
       final ext = _normalizeExt(p.extension(x.path));
-      final dest = p.join(tmp.path, 'import_${DateTime.now().millisecondsSinceEpoch}_${out.length}$ext');
+      final dest = p.join(tmp.path,
+          'import_${DateTime.now().millisecondsSinceEpoch}_${out.length}$ext');
       await File(x.path).copy(dest);
       out.add(dest);
     }
@@ -45,7 +47,16 @@ class PickerService {
     final res = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       type: FileType.custom,
-      allowedExtensions: const ['jpg', 'jpeg', 'png', 'heic', 'heif', 'tif', 'tiff', 'pdf'],
+      allowedExtensions: const [
+        'jpg',
+        'jpeg',
+        'png',
+        'heic',
+        'heif',
+        'tif',
+        'tiff',
+        'pdf'
+      ],
       withReadStream: false,
     );
     if (res == null || res.files.isEmpty) return const PickResult();
@@ -65,7 +76,8 @@ class PickerService {
         skipped.add(path); // unsupported image type
         continue;
       }
-      final dest = p.join(tmp.path, 'import_${DateTime.now().millisecondsSinceEpoch}_${images.length}$ext');
+      final dest = p.join(tmp.path,
+          'import_${DateTime.now().millisecondsSinceEpoch}_${images.length}$ext');
       await File(path).copy(dest);
       images.add(dest);
     }

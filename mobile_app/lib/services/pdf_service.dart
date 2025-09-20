@@ -1,10 +1,12 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+
+import 'library_repository.dart';
+import 'receipt_intel.dart';
 
 enum ColorMode { color, grayscale, bw }
 
@@ -13,6 +15,7 @@ class PdfService {
     required List<String> imagePaths,
     int quality = 90,
     ColorMode mode = ColorMode.color,
+    ReceiptIntelResult? receipt,
   }) async {
     final title = _docTitle(imagePaths.length);
     final doc = pw.Document(
@@ -41,21 +44,37 @@ class PdfService {
     final dir = await getApplicationDocumentsDirectory();
     final outDir = Directory('${dir.path}/scans');
     if (!await outDir.exists()) await outDir.create(recursive: true);
-    final name = _filename(imagePaths.length);
+    final name = _filename(imagePaths.length, receipt: receipt);
     final file = File('${outDir.path}/$name');
     final data = await doc.save();
-    await file.writeAsBytes(Uint8List.fromList(data), flush: true);
+    await file.writeAsBytes(data, flush: true);
+    await LibraryRepository.instance.registerFile(file);
+    if (receipt != null) {
+      await LibraryRepository.instance.saveMetadata(file.path, receipt);
+    }
     return file;
   }
 
-  static String _filename(int pages) {
-    final now = DateTime.now();
+  static String _filename(int pages, {ReceiptIntelResult? receipt}) {
+    final now = receipt?.purchaseDate ?? DateTime.now();
     final y = now.year.toString().padLeft(4, '0');
     final m = now.month.toString().padLeft(2, '0');
     final d = now.day.toString().padLeft(2, '0');
-    final hh = now.hour.toString().padLeft(2, '0');
-    final mm = now.minute.toString().padLeft(2, '0');
-    return 'Scan_${y}${m}${d}_${hh}${mm}_${pages}p.pdf';
+    final parts = <String>['${y}${m}${d}'];
+    if (receipt?.vendor != null) {
+      final vendor = receipt!.vendor!
+          .trim()
+          .replaceAll(RegExp('[^A-Za-z0-9]+'), '_')
+          .replaceAll(RegExp('_+'), '_');
+      if (vendor.isNotEmpty) {
+        parts.add(vendor);
+      }
+    }
+    if (receipt?.total?.value != null) {
+      parts.add('USD${receipt!.total!.value.toStringAsFixed(2)}');
+    }
+    parts.add('${pages}p');
+    return '${parts.join('_')}.pdf';
   }
 
   static String _docTitle(int pages, {DateTime? now}) {
@@ -65,7 +84,7 @@ class PdfService {
     final d = now.day.toString().padLeft(2, '0');
     final hh = now.hour.toString().padLeft(2, '0');
     final mm = now.minute.toString().padLeft(2, '0');
-    return 'Scan ${y}-${m}-${d} ${hh}:${mm} (${pages} pages)';
+    return 'Scan $y-$m-$d $hh:$mm ($pages pages)';
   }
 
   // Test helpers
@@ -73,5 +92,6 @@ class PdfService {
   static String debugFilenameForPages(int pages) => _filename(pages);
 
   @visibleForTesting
-  static String debugDocTitleForPages(int pages, DateTime now) => _docTitle(pages, now: now);
+  static String debugDocTitleForPages(int pages, DateTime now) =>
+      _docTitle(pages, now: now);
 }

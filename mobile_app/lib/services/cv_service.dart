@@ -18,13 +18,11 @@ class CvService {
     // In Simulator/Web or when plugin is absent, skip native call quickly.
     if (kIsWeb) return path;
     try {
-      final result = await _channel
-          .invokeMethod<String>('processImage', {
-            'path': path,
-            'mode': mode.name,
-            'quality': quality,
-          })
-          .timeout(const Duration(seconds: 2));
+      final result = await _channel.invokeMethod<String>('processImage', {
+        'path': path,
+        'mode': mode.name,
+        'quality': quality,
+      }).timeout(const Duration(seconds: 2));
       return result ?? path;
     } on MissingPluginException {
       return path; // no-op until native side is added

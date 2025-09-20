@@ -7,7 +7,8 @@ import 'screens/pdf_view_screen.dart';
 import 'screens/settings_screen.dart';
 
 // Observe navigation so Library can refresh when returning.
-final RouteObserver<PageRoute<dynamic>> routeObserver = RouteObserver<PageRoute<dynamic>>();
+final RouteObserver<PageRoute<dynamic>> routeObserver =
+    RouteObserver<PageRoute<dynamic>>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

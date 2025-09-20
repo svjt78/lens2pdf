@@ -51,8 +51,7 @@ class SettingsService {
   }
 
   static Future<void> save(Settings s) async {
-      final f = await _file();
-      await f.writeAsString(json.encode(s.toJson()), flush: true);
+    final f = await _file();
+    await f.writeAsString(json.encode(s.toJson()), flush: true);
   }
 }
-

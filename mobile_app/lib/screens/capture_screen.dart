@@ -4,10 +4,12 @@ import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'review_screen.dart';
 import 'library_screen.dart';
 import '../services/picker_service.dart';
+import '../services/library_repository.dart';
 
 class CaptureScreen extends StatefulWidget {
   static const route = '/capture';
@@ -17,39 +19,90 @@ class CaptureScreen extends StatefulWidget {
   State<CaptureScreen> createState() => _CaptureScreenState();
 }
 
-class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserver {
+class _CaptureScreenState extends State<CaptureScreen>
+    with WidgetsBindingObserver {
   CameraController? _controller;
   List<CameraDescription> _cameras = const [];
   final List<String> _captured = [];
   bool _busy = false;
+  PermissionStatus? _cameraPermission;
+  String? _cameraError;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
-  }
-
-  Future<void> _init() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    try {
-      _cameras = await availableCameras();
-      if (_cameras.isEmpty) {
-        // No camera available (e.g., iOS Simulator). Trigger rebuild to show fallback UI.
-        if (mounted) setState(() {});
-        return;
-      }
-      _controller = CameraController(_cameras.first, ResolutionPreset.max, enableAudio: false);
-      await _controller!.initialize();
-      if (mounted) setState(() {});
-    } catch (_) {
-      // ignore for scaffold
-    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_controller == null) return;
+    if (state == AppLifecycleState.inactive) {
+      _controller?.dispose();
+      _controller = null;
+    } else if (state == AppLifecycleState.resumed &&
+        !(_cameraPermission?.isPermanentlyDenied ?? false)) {
+      _init();
+    }
+  }
+
+  Future<void> _init() async {
+    if (!mounted) return;
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      _cameraPermission = await _ensureCameraPermission();
+      if (!(_cameraPermission?.isGranted ?? false)) {
+        _controller = null;
+        _cameras = const [];
+        return;
+      }
+      _cameraError = null;
+      await _initializeCameraController();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<PermissionStatus> _ensureCameraPermission() async {
+    final status = await Permission.camera.status;
+    if (status.isGranted) return status;
+    if (status.isDenied || status.isLimited) {
+      final result = await Permission.camera.request();
+      return result;
+    }
+    return status;
+  }
+
+  Future<void> _initializeCameraController() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) {
+        if (mounted) setState(() {});
+        return;
+      }
+      await _controller?.dispose();
+      _controller = CameraController(_cameras.first, ResolutionPreset.max,
+          enableAudio: false);
+      await _controller!.initialize();
+      if (mounted) setState(() {});
+    } on CameraException catch (e) {
+      _cameraError = e.description ?? e.code;
+      _controller = null;
+      if (mounted) setState(() {});
+    } catch (e) {
+      _cameraError = e.toString();
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _capture() async {
@@ -59,7 +112,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
     try {
       final shot = await _controller!.takePicture();
       final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/scan_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path =
+          '${dir.path}/scan_${DateTime.now().millisecondsSinceEpoch}.jpg';
       await File(shot.path).copy(path);
       _captured.add(path);
       if (mounted) setState(() {});
@@ -69,7 +123,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
   }
 
   void _goReview() {
-    Navigator.pushNamed(context, ReviewScreen.route, arguments: _captured.toList());
+    Navigator.pushNamed(context, ReviewScreen.route,
+        arguments: _captured.toList());
   }
 
   Future<void> _importImages() async {
@@ -107,20 +162,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
         imported = res.images;
         // Handle PDFs: copy into Library (documents/scans/) so they appear on the home screen.
         if (res.pdfs.isNotEmpty) {
-          final docs = await getApplicationDocumentsDirectory();
-          final scans = Directory('${docs.path}/scans');
-          if (!await scans.exists()) await scans.create(recursive: true);
           for (final pdfPath in res.pdfs) {
-            final name = pdfPath.split('/').last;
-            var target = File('${scans.path}/$name');
-            if (await target.exists()) {
-              final ts = DateTime.now().millisecondsSinceEpoch;
-              final parts = name.split('.');
-              final base = parts.length > 1 ? parts.sublist(0, parts.length - 1).join('.') : name;
-              final ext = parts.length > 1 ? '.${parts.last}' : '';
-              target = File('${scans.path}/${base}_$ts$ext');
-            }
-            await File(pdfPath).copy(target.path);
+            await LibraryRepository.instance.importPdf(pdfPath);
           }
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -129,7 +172,8 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
                 action: SnackBarAction(
                   label: 'Go to Library',
                   onPressed: () {
-                    Navigator.pushNamedAndRemoveUntil(context, LibraryScreen.route, (route) => false);
+                    Navigator.pushNamedAndRemoveUntil(
+                        context, LibraryScreen.route, (route) => false);
                   },
                 ),
               ),
@@ -139,7 +183,9 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
         // Inform about skipped unsupported files (HEIC/TIFF)
         if (res.skipped.isNotEmpty && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Skipped ${res.skipped.length} unsupported file(s): HEIC/TIFF')),
+            SnackBar(
+                content: Text(
+                    'Skipped ${res.skipped.length} unsupported file(s): HEIC/TIFF')),
           );
         }
       }
@@ -163,15 +209,18 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
       ..color = const ui.Color(0xFFDDDDDD)
       ..style = ui.PaintingStyle.stroke
       ..strokeWidth = 8;
-    canvas.drawRect(ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()), paintBg);
+    canvas.drawRect(
+        ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()), paintBg);
     // Subtle border
-    canvas.drawRect(ui.Rect.fromLTWH(16, 16, width - 32.0, height - 32.0), border);
+    canvas.drawRect(
+        ui.Rect.fromLTWH(16, 16, width - 32.0, height - 32.0), border);
     final picture = recorder.endRecording();
     final img = await picture.toImage(width, height);
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
     if (data == null) return;
     final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/sample_${DateTime.now().millisecondsSinceEpoch}.png';
+    final path =
+        '${dir.path}/sample_${DateTime.now().millisecondsSinceEpoch}.png';
     await File(path).writeAsBytes(data.buffer.asUint8List(), flush: true);
     _captured.add(path);
     if (mounted) setState(() {});
@@ -186,18 +235,28 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
       body: Column(
         children: [
           Expanded(
-            child: initialized
-                ? CameraPreview(_controller!)
-                : noCamera
-                    ? const _NoCameraFallback()
-                    : const Center(child: CircularProgressIndicator()),
+            child: (_cameraPermission?.isGranted == false)
+                ? _PermissionFallback(
+                    isPermanentlyDenied:
+                        _cameraPermission?.isPermanentlyDenied ?? false,
+                    onRequest: _init,
+                    onOpenSettings: openAppSettings,
+                  )
+                : _cameraError != null
+                    ? _ErrorFallback(message: _cameraError!)
+                    : initialized
+                        ? CameraPreview(_controller!)
+                        : noCamera
+                            ? const _NoCameraFallback()
+                            : const Center(child: CircularProgressIndicator()),
           ),
           // Quick preview strip for feedback on captured/imported pages
           if (_captured.isNotEmpty)
             SizedBox(
               height: 110,
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 scrollDirection: Axis.horizontal,
                 itemCount: _captured.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
@@ -229,14 +288,26 @@ class _CaptureScreenState extends State<CaptureScreen> with WidgetsBindingObserv
                       runSpacing: 8,
                       children: [
                         IconButton(
-                          onPressed: (_busy || noCamera) ? null : _capture,
+                          onPressed: (_busy ||
+                                  noCamera ||
+                                  (_cameraPermission?.isGranted != true) ||
+                                  _cameraError != null)
+                              ? null
+                              : _capture,
                           icon: const Icon(Icons.camera),
-                          tooltip: noCamera ? 'Camera not available in Simulator' : 'Capture',
+                          tooltip: (_cameraPermission?.isGranted != true)
+                              ? 'Camera permission required'
+                              : noCamera
+                                  ? 'Camera not available in Simulator'
+                                  : _cameraError != null
+                                      ? 'Camera unavailable'
+                                      : 'Capture',
                         ),
                         if (noCamera)
                           OutlinedButton.icon(
                             onPressed: _busy ? null : _addSample,
-                            icon: const Icon(Icons.add_photo_alternate_outlined),
+                            icon:
+                                const Icon(Icons.add_photo_alternate_outlined),
                             label: const Text('Add sample'),
                           ),
                         OutlinedButton.icon(
@@ -278,6 +349,85 @@ class _NoCameraFallback extends StatelessWidget {
             Text(
               'Camera not available on this device.\nOn the iOS Simulator, use “Add sample” to try the flow.',
               textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionFallback extends StatelessWidget {
+  final bool isPermanentlyDenied;
+  final VoidCallback? onRequest;
+  final Future<bool> Function()? onOpenSettings;
+  const _PermissionFallback({
+    required this.isPermanentlyDenied,
+    this.onRequest,
+    this.onOpenSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.lock_outlined, size: 48, color: Colors.grey),
+            const SizedBox(height: 12),
+            const Text(
+              'Camera permission is required to capture new scans.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            if (!isPermanentlyDenied)
+              FilledButton.icon(
+                onPressed: onRequest,
+                icon: const Icon(Icons.lock_open_outlined),
+                label: const Text('Grant Access'),
+              ),
+            if (isPermanentlyDenied) ...[
+              FilledButton.icon(
+                onPressed: onOpenSettings == null
+                    ? null
+                    : () => onOpenSettings?.call(),
+                icon: const Icon(Icons.settings),
+                label: const Text('Open Settings'),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Enable the camera permission in Settings to continue.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black54),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorFallback extends StatelessWidget {
+  final String message;
+  const _ErrorFallback({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.black54),
             ),
           ],
         ),

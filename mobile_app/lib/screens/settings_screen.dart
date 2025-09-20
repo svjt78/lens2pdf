@@ -36,7 +36,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await SettingsService.save(_settings);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Defaults saved')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Defaults saved')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -69,12 +70,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 8),
                   SegmentedButton<ColorMode>(
                     segments: const [
-                      ButtonSegment(value: ColorMode.color, label: Text('Color')),
-                      ButtonSegment(value: ColorMode.grayscale, label: Text('Gray')),
+                      ButtonSegment(
+                          value: ColorMode.color, label: Text('Color')),
+                      ButtonSegment(
+                          value: ColorMode.grayscale, label: Text('Gray')),
                       ButtonSegment(value: ColorMode.bw, label: Text('B&W')),
                     ],
                     selected: {_settings.mode},
-                    onSelectionChanged: (s) => setState(() => _settings = _settings.copyWith(mode: s.first)),
+                    onSelectionChanged: (s) => setState(
+                        () => _settings = _settings.copyWith(mode: s.first)),
                   ),
                   const SizedBox(height: 24),
                   Text('Default Quality: ${_settings.quality}'),
@@ -84,7 +88,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     max: 95,
                     divisions: 7,
                     label: '${_settings.quality}',
-                    onChanged: (v) => setState(() => _settings = _settings.copyWith(quality: v.toInt())),
+                    onChanged: (v) => setState(() =>
+                        _settings = _settings.copyWith(quality: v.toInt())),
                   ),
                   const Spacer(),
                   Row(
@@ -108,4 +113,3 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
-
