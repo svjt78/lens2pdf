@@ -100,4 +100,16 @@ flutter_export_environment.sh
 *.tiff
 *.heic
 /mobile_app/scans/
+**/*.receipt.json
 
+# Flutter tooling metadata
+mobile_app/.metadata
+
+# Internal documentation
+SPEC.md
+IMPLEMENTATION_PLAN.md
+ITERATION_1_IMPLEMENTATION.md
+ITERATION_0_1_PENDING.md
+LAUNCHING_FLUTTER_APP.md
+AGENTS.md
+ios/XCODE_SETUP.md

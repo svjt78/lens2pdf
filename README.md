@@ -1,31 +1,42 @@
-Image to PDF Scanner (Flutter)
+Image to PDF Scanner
 
-A lightweight image-to-PDF mobile app built with Flutter. Capture or import images, adjust export settings (color/gray/B&W, quality), generate a PDF, and manage your scans in a simple library view. This repository hosts the Flutter app under `mobile_app/` and convenience wrappers at the repo root.
+An image-to-PDF mobile app. Capture or import images, adjust export settings (color/gray/B&W, quality), generate a PDF, and manage your scans in a structured library view enriched with receipt metadata. This repository contains:
+
+- A Flutter app under `mobile_app/` (iOS/Android)
+- Native iOS core modules and demo scaffolding under `ios/` (Swift, iOS 16+)
 
 - Platforms: iOS (Simulator + device), Android (device/emulator)
-- Status: MVP — sharing targets and OpenCV hooks are implemented via method channels; native sides are minimal/best‑effort.
+- Status: MVP — Flutter app implements end-to-end scanning and sharing; native iOS modules are scaffolded for future iterations.
 
 Features
 
-- Capture with camera or import from Photos/Files (Simulator: use Add sample)
-- Export to PDF with adjustable quality and color mode
-- Share via platform share sheet; shortcuts for Airdrop, Email, SMS, WhatsApp
-- Library with rename, delete, share, and PDF viewer
+- Capture with device camera or import from Photos/Files (Simulator: use Add sample)
+- On-device OCR + receipt intelligence → auto-fills vendor/date/total, card info, confidence, and suggests a descriptive filename
+- Export to PDF with adjustable quality and color mode and view/share immediately
+- Library persists scans (rename/delete/share) and now shows receipt details above the PDF when you open it
+- Metadata is cached beside each PDF so summary data survives app restarts without re-running OCR
 - Idempotent platform permission helpers for Android/iOS
 
 Repository Layout
 
-- `mobile_app/` — Flutter app (all Dart/Swift/Android sources)
-- `Makefile` — Root thin wrappers that call `mobile_app/Makefile`
-- `SIMULATOR_DEPLOY.md` — One‑liners to run on an iOS Simulator
-- `LAUNCHING_FLUTTER_APP.md` — Step‑by‑step launch guide (iOS + device)
+- `mobile_app/` — Flutter app (Dart + platform shells)
+- `ios/` — Native iOS Swift modules and demo app scaffolding
+  - `ios/README.md` — Overview of modules (OCRKit, ReceiptIntel, ImageFX, PDFBuilder, CSVExporter, ShareHub)
+  - `ios/App/README.md` — Demo app usage and file map (SwiftUI)
+- `Makefile` — Root wrappers that call `mobile_app/Makefile`
+- `LAUNCHING_FLUTTER_APP.md` — Step‑by‑step Flutter launch guide (simulator + device)
+- `ios/XCODE_SETUP.md` — How to run the native iOS demo (Swift)
+- `SPEC.md` / `IMPLEMENTATION_PLAN.md` — Product spec and implementation roadmap
+- `commands.md` — Quick command cheat‑sheet
 
 Prerequisites
 
 - Flutter SDK installed and `flutter doctor` clean
-- Xcode + Command Line Tools for iOS (open Xcode once)
+- Xcode + Command Line Tools (enable Developer Mode on physical devices)
 - CocoaPods for iOS: `sudo gem install cocoapods`
-- Android toolchain/SDK for Android (optional)
+- iOS deployment target **15.5+** (required by Google ML Kit)
+- Android toolchain/SDK (optional)
+- For native iOS demo (optional): Xcode 16.x, Swift 5.9+
 
 Verify tools:
 
@@ -34,9 +45,9 @@ flutter --version
 xcodebuild -version
 ```
 
-Quick Start (iOS Simulator)
+Quick Start (iOS Simulator, Flutter)
 
-See also `SIMULATOR_DEPLOY.md` for copy‑paste one‑liners.
+See also `LAUNCHING_FLUTTER_APP.md` for a detailed walkthrough.
 
 ```
 # From repo root
@@ -58,6 +69,33 @@ make run-android
 
 Ensure an emulator/device is available: `flutter devices`.
 
+Native iOS (Swift) Quick Start
+
+For the iOS Swift modules and demo UI, follow `ios/XCODE_SETUP.md`. In short:
+
+- Create a new SwiftUI app in Xcode (or open your existing project).
+- Add the local Swift package from `ios/` (or drag `ios/Core` and `ios/App` into the project).
+- Link Apple frameworks: Vision, PDFKit, PhotosUI.
+- Set signing, select a simulator/device, and run.
+- See also: `ios/App/README.md` for the demo app and file map.
+
+**iOS Modules Features**
+
+- Available now (under `ios/Core`)
+  - OCRKit: Vision-based OCR (`VNRecognizeTextRequest`), line/box geometry, `en-US`.
+  - PDFBuilder: PDFKit pages, optional selectable text layer, basic metadata.
+  - ImageFX: Minimal processing (downscale/JPEG re-encode placeholder); DPI helpers.
+  - ReceiptIntel: Heuristics for vendor/date/subtotal/tax/total; auto-naming.
+  - CSVExporter: Monthly CSV export function.
+  - ShareHub: Share profiles scaffolding (Standard, Compact) with filename strategies.
+
+- Planned/scaffolded (see `SPEC.md`, `IMPLEMENTATION_PLAN.md`)
+  - Redactor: Irreversible redaction pipeline (rasterize + rebuild PDF).
+  - Watermarker: Diagonal/footer watermarks with customizable text/expiry.
+  - Vault: Face ID–protected storage, NSFileProtectionComplete; optional AES-GCM.
+  - SearchIndex: Core Spotlight entries for local search.
+  - ReminderSvc: Return Guard calendar reminders via EventKit.
+
 Make Targets (root wrappers)
 
 - `make setup` — Scaffold platforms and fetch deps
@@ -73,27 +111,31 @@ Make Targets (root wrappers)
 
 All targets accept extra Flutter flags via `ARGS="--release --dart-define=KEY=VAL"`.
 
+Command Cheat‑Sheet
+
+- Common one‑liners: see `commands.md`.
+
 App Walkthrough
 
-- Home (Library)
-  - Displays PDFs saved under app documents at `Documents/scans/`
-  - Long‑lived view; it auto‑refreshes when returning from capture/export
-  - Supports rename, share, delete; tapping opens the in‑app PDF viewer
-- Capture
-  - Shows camera preview when available; on Simulator, camera is unavailable
-  - Use Import to pick images or PDFs from Files/Photos; “Add sample” creates a placeholder page
-- Review
-  - Reorder and remove pages before export
-- Export
-  - Color mode: Color, Grayscale, B&W
-  - Quality slider (60–95)
-  - Exports to `Documents/scans/Scan_YYYYMMDD_HHMM_{n}p.pdf`
-  - Share sheet with shortcuts (Airdrop/Email/SMS/WhatsApp) and a generic “Share…” option
+- **Library**
+  - Lists PDFs stored under `Documents/scans/` displaying filename and creation timestamp
+  - Supports rename/share/delete; tapping opens the PDF preview with receipt summary (vendor, purchase date, totals, payment info, confidence)
+- **Capture**
+  - Live camera preview (falls back to sample/import on Simulator)
+  - Batch import from Photos/Files; PDFs copied into the library automatically
+- **Review**
+  - Reorder/remove pages before exporting
+- **Export**
+  - Adjust color mode (Color/Grayscale/B&W) and quality (60–95)
+  - Runs OCR + receipt intel to propose filename and metadata
+  - Exported PDFs saved to `Documents/scans/<auto_name>.pdf` with `.receipt.json` sidecar metadata
+  - Share directly or open the PDF preview with summary card
 
 Where files are stored
 
-- iOS/Android: App documents directory at `Documents/scans/` (created on demand)
-- Imported PDFs from Files are copied into `Documents/scans/` so they appear in Library immediately
+- iOS/Android: App documents directory at `Documents/scans/`
+- Imported PDFs from Files are copied into the same directory
+- Receipt metadata lives beside each PDF as `<filename>.receipt.json`
 
 Permissions
 
@@ -110,9 +152,10 @@ Simulator Notes (iOS)
 
 Native Integrations
 
-- Method channels:
-  - `share_targets` (iOS: AppDelegate.swift) for Airdrop, Email, SMS, WhatsApp shortcuts; gracefully falls back to generic sharing
-  - `cv` (optional) for image pre‑processing; currently no‑op unless native side is implemented
+- Flutter method channels:
+  - `share_targets` for Airdrop, Email, SMS, WhatsApp shortcuts (with graceful fallbacks)
+  - `cv` (placeholder) for native preprocessing hooks
+- Native iOS (Swift) modules under `ios/` still house the long-term Receipts/ID feature set (OCRKit, ReceiptIntel, PDFBuilder, etc.). Integration work is tracked in `SPEC.md` / `IMPLEMENTATION_PLAN.md`.
 
 Troubleshooting
 
@@ -123,9 +166,15 @@ Troubleshooting
 
 Development
 
-- Code style: Flutter/Dart defaults; run `make analyze`
-- Tests: `make test`
-- Docs: detailed run guides in `SIMULATOR_DEPLOY.md` and `LAUNCHING_FLUTTER_APP.md`
+- Code style: Flutter/Dart defaults for `mobile_app/` (`make analyze`); Swift style for `ios/` per Xcode defaults
+- Tests: `make test` (Flutter), XCTest targets inside `ios/` if added
+- Docs: detailed Flutter run guide in `LAUNCHING_FLUTTER_APP.md`; native iOS setup in `ios/XCODE_SETUP.md`
+
+Contributing
+
+- Use Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+- Keep changes focused; update docs/tests as needed.
+- Avoid committing large binaries or secrets.
 
 Security
 
@@ -137,6 +186,7 @@ Roadmap / Ideas
 - Native OpenCV preprocessing for grayscale/B&W (iOS/Android)
 - Thumbnails in Library and review
 - OCR pipeline and searchable PDFs
+  - Native iOS modules in `ios/` track this; see `SPEC.md` and `IMPLEMENTATION_PLAN.md`
 
 License
 
