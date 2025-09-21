@@ -57,6 +57,29 @@ void main() {
     expect(entries.first.isPdf, isTrue);
   });
 
+  test('rename moves metadata sidecar', () async {
+    final scansDir = Directory(p.join(docsDir.path, 'scans'));
+    final original = File(p.join(scansDir.path, 'original.pdf'));
+    await original.writeAsBytes([0]);
+
+    await repo.saveMetadata(
+      original.path,
+      const ReceiptIntelResult(vendor: 'Storefront', confidence: 0.5),
+    );
+
+    final renamed = await repo.rename(original.path, 'renamed.pdf');
+    expect(renamed, isNotNull);
+
+    final oldMeta = File(p.join(scansDir.path, 'original.receipt.json'));
+    final newMeta = File(p.join(scansDir.path, 'renamed.receipt.json'));
+    expect(await oldMeta.exists(), isFalse);
+    expect(await newMeta.exists(), isTrue);
+
+    final raw = await repo.loadMetadataMap(renamed!.path);
+    expect(raw, isNotNull);
+    expect(raw!['vendor'], 'Storefront');
+  });
+
   test('rename prevents duplicate names', () async {
     final scansDir = Directory(p.join(docsDir.path, 'scans'));
     final original = File(p.join(scansDir.path, 'one.pdf'));
@@ -92,5 +115,73 @@ void main() {
     final entry = entries.first;
     expect(entry.receipt?.vendor, 'Store');
     expect(entry.receipt?.total?.value, 15.99);
+  });
+
+  test('saveMetadataMap normalizes values', () async {
+    final scansDir = Directory(p.join(docsDir.path, 'scans'));
+    final pdf = File(p.join(scansDir.path, 'meta.pdf'));
+    await pdf.writeAsBytes([0]);
+
+    final future = repo.watch().firstWhere((e) =>
+        e.any((entry) => entry.path == pdf.path && entry.tags.isNotEmpty));
+
+    await repo.saveMetadataMap(pdf.path, {
+      'vendor': ' Fresh Mart  ',
+      'purchaseDate': DateTime(2024, 2, 1),
+      'total': 21.5,
+      'tags': 'groceries, weekly , groceries',
+      'notes': '  keep for taxes ',
+    });
+
+    final entries = await future;
+    final entry = entries.firstWhere((element) => element.path == pdf.path);
+    expect(entry.tags, containsAll(<String>['groceries', 'weekly']));
+
+    final raw = await repo.loadMetadataMap(pdf.path);
+    expect(raw, isNotNull);
+    expect(raw!['vendor'], 'Fresh Mart');
+    expect(raw['purchaseDate'], startsWith('2024-02-01'));
+    expect(raw['tags'], ['groceries', 'weekly']);
+    expect(raw['notes'], 'keep for taxes');
+  });
+
+  test('metadata is exposed for search and document typing', () async {
+    final scansDir = Directory(p.join(docsDir.path, 'scans'));
+    final pdf = File(p.join(scansDir.path, 'typed.pdf'));
+    await pdf.writeAsBytes([0]);
+
+    await repo.registerFile(pdf);
+
+    final result = ReceiptIntelResult(
+      vendor: 'Acme Hardware',
+      purchaseDate: DateTime(2024, 1, 10),
+      total: const ReceiptAmount(42.75, 0.9),
+      paymentMethod: 'Visa',
+      last4: '1234',
+      confidence: 0.8,
+    );
+
+    final entriesFuture = repo.watch().firstWhere((value) => value.any(
+          (entry) =>
+              entry.path == pdf.path &&
+              entry.metadata != null &&
+              entry.receipt != null,
+        ));
+    await repo.saveMetadata(pdf.path, result);
+    final entries = await entriesFuture;
+
+    final entry = entries.firstWhere((element) => element.path == pdf.path);
+
+    expect(entry.metadata, isNotNull);
+    expect(entry.metadata!['vendor'], 'Acme Hardware');
+    expect(entry.documentType, 'receipt');
+    expect(entry.matchesQuery('hardware'), isTrue);
+    expect(entry.matchesQuery('42.75'), isTrue);
+    expect(entry.matchesQuery('visa'), isTrue);
+    expect(entry.matchesQuery('nope'), isFalse);
+
+    final raw = await repo.loadMetadataMap(pdf.path);
+    expect(raw, isNotNull);
+    expect(raw!['vendor'], 'Acme Hardware');
   });
 }

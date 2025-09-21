@@ -173,7 +173,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                   label: 'Go to Library',
                   onPressed: () {
                     Navigator.pushNamedAndRemoveUntil(
-                        context, LibraryScreen.route, (route) => false);
+                        context, '/', (route) => false);
                   },
                 ),
               ),

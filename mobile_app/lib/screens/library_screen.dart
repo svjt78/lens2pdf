@@ -8,14 +8,18 @@ import 'package:path_provider/path_provider.dart';
 
 import '../main.dart';
 import '../services/library_repository.dart';
+import '../services/library_filters.dart';
 import '../services/picker_service.dart';
+import '../services/settings_service.dart';
+import 'edit_metadata_sheet.dart';
 import '../services/share_service.dart';
 import 'capture_screen.dart';
 import 'pdf_view_screen.dart';
 import 'review_screen.dart';
+import 'home_shell_scope.dart';
 
 class LibraryScreen extends StatefulWidget {
-  static const route = '/';
+  static const route = '/library';
   const LibraryScreen({super.key});
 
   @override
@@ -24,6 +28,10 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
   final LibraryRepository _libraryRepository = LibraryRepository.instance;
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+  MonthKey? _selectedMonth;
+  final Set<String> _selectedTags = <String>{};
 
   @override
   void initState() {
@@ -42,6 +50,7 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
 
   @override
   void dispose() {
+    _searchController.dispose();
     routeObserver.unsubscribe(this);
     super.dispose();
   }
@@ -63,6 +72,31 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
             onPressed: () => Navigator.pushNamed(context, '/settings'),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(64),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search by vendor, amount, ID fields... ',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearSearch,
+                      ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onChanged: (value) {
+                setState(() => _query = value);
+              },
+            ),
+          ),
+        ),
       ),
       floatingActionButton: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -73,10 +107,18 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
           children: [
             FloatingActionButton.extended(
               heroTag: 'fab_scan',
-              onPressed: () =>
+              onPressed: () {
+                final scope = HomeShellScope.maybeOf(context);
+                if (scope != null) {
+                  scope.onSelectTab(1);
+                } else {
                   Navigator.pushNamed(context, CaptureScreen.route).then((_) {
-                _libraryRepository.refresh();
-              }),
+                    if (mounted) {
+                      _libraryRepository.refresh();
+                    }
+                  });
+                }
+              },
               icon: const Icon(Icons.camera_alt),
               label: const Text('Scan'),
             ),
@@ -100,14 +142,227 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
             return const Center(
                 child: Text('No scans yet. Tap Scan to start.'));
           }
-          return ListView.builder(
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final entry = items[index];
-              return ListTile(
-                leading: const Icon(Icons.picture_as_pdf),
-                title: Text(entry.name),
-                subtitle: Text(_subtitleFor(entry)),
+          final filters = LibraryFilters(
+            month: _selectedMonth,
+            tags: _selectedTags,
+            query: _query,
+          );
+          final result = LibraryFilterEngine.apply(items, filters);
+          final filtered = result.items;
+
+          return Column(
+            children: [
+              if (result.monthFacets.isNotEmpty ||
+                  result.tagFacets.isNotEmpty ||
+                  filters.hasActiveFilters ||
+                  _query.isNotEmpty)
+                _buildFiltersPanel(result, filters),
+              Expanded(
+                child: filtered.isEmpty
+                    ? _buildFilteredEmptyState(filters)
+                    : _buildGrid(filtered),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFiltersPanel(
+    LibraryFilterResult result,
+    LibraryFilters filters,
+  ) {
+    final theme = Theme.of(context);
+    final showMonthSection = result.monthFacets.isNotEmpty;
+    final showTagSection = result.tagFacets.isNotEmpty;
+    final showActions = filters.hasActiveFilters || filters.query.isNotEmpty;
+
+    if (!showMonthSection && !showTagSection && !showActions) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (showMonthSection) ...[
+                Text(
+                  'Month',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: result.monthFacets.map((facet) {
+                      final selected = _selectedMonth == facet.key;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(
+                            '${facet.label()} (${facet.count})',
+                          ),
+                          selected: selected,
+                          onSelected: (_) => _handleSelectMonth(facet.key),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (showTagSection) ...[
+                Text(
+                  'Tags',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: result.tagFacets.take(12).map((facet) {
+                    final normalized = facet.tag.toLowerCase();
+                    final selected = _selectedTags.contains(normalized);
+                    return FilterChip(
+                      label: Text('${facet.tag} (${facet.count})'),
+                      selected: selected,
+                      onSelected: (_) => _handleToggleTag(facet.tag),
+                    );
+                  }).toList(),
+                ),
+                if (result.tagFacets.length > 12)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Showing top 12 of ${result.tagFacets.length} tags',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                const SizedBox(height: 12),
+              ],
+              if (showActions)
+                Wrap(
+                  spacing: 12,
+                  children: [
+                    if (filters.hasActiveFilters)
+                      TextButton.icon(
+                        onPressed: _clearFilters,
+                        icon: const Icon(Icons.filter_alt_off),
+                        label: const Text('Clear filters'),
+                      ),
+                    if (filters.query.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: _clearSearch,
+                        icon: const Icon(Icons.backspace_outlined),
+                        label: const Text('Clear search'),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilteredEmptyState(LibraryFilters filters) {
+    final hasFilters = filters.hasActiveFilters;
+    final hasQuery = filters.query.isNotEmpty;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            hasFilters || hasQuery
+                ? 'No scans match the current filters.'
+                : 'No scans found.',
+            textAlign: TextAlign.center,
+          ),
+          if (hasFilters)
+            TextButton.icon(
+              onPressed: _clearFilters,
+              icon: const Icon(Icons.filter_alt_off),
+              label: const Text('Clear filters'),
+            ),
+          if (hasQuery)
+            TextButton.icon(
+              onPressed: _clearSearch,
+              icon: const Icon(Icons.backspace_outlined),
+              label: const Text('Clear search'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _handleSelectMonth(MonthKey key) {
+    setState(() {
+      if (_selectedMonth == key) {
+        _selectedMonth = null;
+      } else {
+        _selectedMonth = key;
+      }
+    });
+  }
+
+  void _handleToggleTag(String tag) {
+    final normalized = tag.trim().toLowerCase();
+    setState(() {
+      if (_selectedTags.contains(normalized)) {
+        _selectedTags.remove(normalized);
+      } else {
+        _selectedTags.add(normalized);
+      }
+    });
+  }
+
+  void _clearFilters() {
+    if (_selectedMonth == null && _selectedTags.isEmpty) return;
+    setState(() {
+      _selectedMonth = null;
+      _selectedTags.clear();
+    });
+  }
+
+  void _clearSearch() {
+    if (_query.isEmpty) return;
+    setState(() {
+      _query = '';
+      _searchController.clear();
+    });
+  }
+
+  Widget _buildGrid(List<ScanEntry> entries) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxExtent = constraints.maxWidth < 400 ? 400.0 : 260.0;
+        return GridView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: maxExtent,
+            mainAxisExtent: 190,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+          ),
+          itemCount: entries.length,
+          itemBuilder: (context, index) {
+            final entry = entries[index];
+            final subtitle = _subtitleFor(entry);
+            final docType = entry.documentType;
+            return Card(
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
                 onTap: () {
                   if (entry.isPdf) {
                     Navigator.pushNamed(
@@ -121,40 +376,148 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
                     );
                   }
                 },
-                trailing: entry.isPdf
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          IconButton(
+                          const Icon(Icons.picture_as_pdf),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              entry.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      if (docType != null)
+                        Text(
+                          docType.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            letterSpacing: 0.6,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      if (entry.tags.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: entry.tags
+                              .map(
+                                (tag) => Chip(
+                                  label: Text(tag),
+                                  labelStyle: const TextStyle(fontSize: 11),
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                      const Spacer(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          _ActionIconButton(
+                            tooltip: 'Edit metadata',
+                            icon: Icons.edit_note_outlined,
+                            onPressed: () => _editMetadata(context, entry),
+                          ),
+                          const SizedBox(width: 4),
+                          _ActionIconButton(
                             tooltip: 'Rename',
-                            icon: const Icon(Icons.drive_file_rename_outline),
+                            icon: Icons.drive_file_rename_outline,
                             onPressed: () => _renameEntry(context, entry),
                           ),
-                          IconButton(
+                          const SizedBox(width: 4),
+                          _ActionIconButton(
                             tooltip: 'Share',
-                            icon: const Icon(Icons.ios_share),
-                            onPressed: () => ShareService.shareFile(
-                                File(entry.path),
-                                subject: 'My Scan'),
+                            icon: Icons.ios_share,
+                            onPressed: () => _shareEntry(entry),
                           ),
-                          IconButton(
+                          const SizedBox(width: 4),
+                          _ActionIconButton(
                             tooltip: 'Delete',
-                            icon: const Icon(Icons.delete_forever),
+                            icon: Icons.delete_forever,
                             onPressed: () => _deleteEntry(context, entry),
                           ),
                         ],
-                      )
-                    : null,
-              );
-            },
-          );
-        },
-      ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
   String _subtitleFor(ScanEntry entry) {
-    return DateFormat.yMMMd().add_jm().format(entry.modified.toLocal());
+    final parts = <String>[];
+    final receipt = entry.receipt;
+    final vendor = receipt?.vendor?.trim();
+    if (vendor != null && vendor.isNotEmpty) {
+      parts.add(vendor);
+    }
+    final date = receipt?.purchaseDate ?? entry.modified;
+    parts.add(DateFormat.yMMMd().format(date));
+    final total = receipt?.total?.value;
+    if (total != null) {
+      parts.add(NumberFormat.simpleCurrency().format(total));
+    }
+    return parts.join(' • ');
+  }
+
+  Future<void> _editMetadata(BuildContext context, ScanEntry entry) async {
+    final receipt =
+        entry.receipt ?? await _libraryRepository.loadMetadata(entry.path);
+    final metadata =
+        entry.metadata ?? await _libraryRepository.loadMetadataMap(entry.path);
+
+    final result = await EditMetadataSheet.show(
+      context,
+      pdfPath: entry.path,
+      existingReceipt: receipt,
+      existingMetadata: metadata,
+    );
+
+    if (result?.updated == true) {
+      await _libraryRepository.refresh();
+    }
+  }
+
+  Future<void> _shareEntry(ScanEntry entry) async {
+    final file = File(entry.path);
+    final receipt =
+        entry.receipt ?? await _libraryRepository.loadMetadata(entry.path);
+    final metadata =
+        entry.metadata ?? await _libraryRepository.loadMetadataMap(entry.path);
+    final settings = await SettingsService.load();
+    await ShareService.shareFile(
+      file,
+      subject: 'My Scan',
+      receipt: receipt,
+      metadata: metadata,
+      documentType: entry.documentType,
+      profile: settings.shareProfile,
+    );
   }
 
   Future<void> _renameEntry(BuildContext context, ScanEntry entry) async {
@@ -333,5 +696,29 @@ class _LibraryScreenState extends State<LibraryScreen> with RouteAware {
         p.join(dir.path, 'sample_${DateTime.now().millisecondsSinceEpoch}.png');
     await File(path).writeAsBytes(data!.buffer.asUint8List(), flush: true);
     return path;
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  const _ActionIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(icon, size: 20),
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+      visualDensity: VisualDensity.compact,
+    );
   }
 }

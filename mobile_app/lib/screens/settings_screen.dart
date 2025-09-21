@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/pdf_service.dart';
 import '../services/settings_service.dart';
+import '../services/share_profile.dart';
 
 class SettingsScreen extends StatefulWidget {
   static const route = '/settings';
@@ -90,6 +91,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     label: '${_settings.quality}',
                     onChanged: (v) => setState(() =>
                         _settings = _settings.copyWith(quality: v.toInt())),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text('Default Share Profile'),
+                  const SizedBox(height: 8),
+                  SegmentedButton<ShareProfile>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ShareProfile.standard,
+                        label: Text('Standard'),
+                      ),
+                      ButtonSegment(
+                        value: ShareProfile.compact,
+                        label: Text('Compact'),
+                      ),
+                    ],
+                    selected: {_settings.shareProfile},
+                    onSelectionChanged: (value) => setState(
+                      () => _settings =
+                          _settings.copyWith(shareProfile: value.first),
+                    ),
                   ),
                   const Spacer(),
                   Row(

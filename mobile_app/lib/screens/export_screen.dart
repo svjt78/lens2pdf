@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../services/pdf_service.dart';
 import '../services/share_service.dart';
+import '../services/share_profile.dart';
 import '../services/cv_service.dart';
 import '../services/settings_service.dart';
 import '../services/ocr_service.dart';
@@ -22,6 +23,7 @@ class ExportScreen extends StatefulWidget {
 class _ExportScreenState extends State<ExportScreen> {
   int _quality = 90;
   ColorMode _mode = ColorMode.color;
+  ShareProfile _shareProfile = ShareProfile.standard;
   bool _busy = false;
   List<String> _images = const [];
   String? _lastPath;
@@ -43,6 +45,7 @@ class _ExportScreenState extends State<ExportScreen> {
         setState(() {
           _quality = s.quality;
           _mode = s.mode;
+          _shareProfile = s.shareProfile;
         });
       });
     }
@@ -101,7 +104,7 @@ class _ExportScreenState extends State<ExportScreen> {
       // Notify user with quick actions.
       final path = out.path;
       // Offer share targets immediately
-      _showShareSheet(context, File(path));
+      _showShareSheet(context, File(path), receipt: _receipt);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -110,70 +113,166 @@ class _ExportScreenState extends State<ExportScreen> {
   Future<void> _share() async {
     final path = _lastPath;
     if (path == null) return;
-    _showShareSheet(context, File(path));
+    _showShareSheet(context, File(path), receipt: _receipt);
   }
 
-  void _showShareSheet(BuildContext context, File file) {
+  void _showShareSheet(
+    BuildContext context,
+    File file, {
+    ReceiptIntelResult? receipt,
+  }) {
+    final metadata = receipt?.toJson();
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 8, left: 16, right: 16, bottom: 4),
-              child: Text(
-                'Choose the app on the next screen. The PDF is already attached.',
-                style: TextStyle(color: Colors.black54),
-                textAlign: TextAlign.center,
+      builder: (sheetContext) {
+        var sheetProfile = _shareProfile;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            void updateProfile(ShareProfile profile) {
+              setSheetState(() => sheetProfile = profile);
+              setState(() => _shareProfile = profile);
+            }
+
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding:
+                        EdgeInsets.only(top: 8, left: 16, right: 16, bottom: 8),
+                    child: Text(
+                      'Choose the destination on the next screen. The PDF is attached automatically.',
+                      style: TextStyle(color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Share profile'),
+                            Text(sheetProfile.label,
+                                style: const TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SegmentedButton<ShareProfile>(
+                          segments: const [
+                            ButtonSegment(
+                              value: ShareProfile.standard,
+                              label: Text('Standard'),
+                            ),
+                            ButtonSegment(
+                              value: ShareProfile.compact,
+                              label: Text('Compact'),
+                            ),
+                          ],
+                          selected: {sheetProfile},
+                          onSelectionChanged: (value) =>
+                              updateProfile(value.first),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.share_outlined),
+                    title: const Text('Share...'),
+                    subtitle:
+                        const Text('Generic share sheet (simulator-friendly)'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      ShareService.shareFile(
+                        file,
+                        receipt: receipt,
+                        metadata: metadata,
+                        documentType: 'receipt',
+                        profile: sheetProfile,
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.ios_share),
+                    title: const Text('Airdrop'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      ShareService.shareAirdrop(
+                        file,
+                        receipt: receipt,
+                        metadata: metadata,
+                        documentType: 'receipt',
+                        profile: sheetProfile,
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.email_outlined),
+                    title: const Text('Email'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      ShareService.shareEmail(
+                        file,
+                        subject: 'My Scan',
+                        receipt: receipt,
+                        metadata: metadata,
+                        documentType: 'receipt',
+                        profile: sheetProfile,
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.chat_bubble_outline),
+                    title: const Text('WhatsApp'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      ShareService.shareWhatsApp(
+                        file,
+                        receipt: receipt,
+                        metadata: metadata,
+                        documentType: 'receipt',
+                        profile: sheetProfile,
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.sms_outlined),
+                    title: const Text('SMS / iMessage'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      ShareService.shareSms(
+                        file,
+                        receipt: receipt,
+                        metadata: metadata,
+                        documentType: 'receipt',
+                        profile: sheetProfile,
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.folder_open),
+                    title: const Text('Library'),
+                    subtitle: const Text('Return to your scans'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.popUntil(
+                        context,
+                        (route) => route.settings.name == '/' || route.isFirst,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.share_outlined),
-              title: const Text('Share...'),
-              subtitle: const Text('Generic share sheet (simulator-friendly)'),
-              onTap: () {
-                Navigator.pop(context);
-                ShareService.shareFile(file);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.ios_share),
-              title: const Text('Airdrop'),
-              onTap: () {
-                Navigator.pop(context);
-                ShareService.shareAirdrop(file);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.email_outlined),
-              title: const Text('Email'),
-              onTap: () {
-                Navigator.pop(context);
-                ShareService.shareEmail(file, subject: 'My Scan');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline),
-              title: const Text('WhatsApp'),
-              onTap: () {
-                Navigator.pop(context);
-                ShareService.shareWhatsApp(file);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.sms_outlined),
-              title: const Text('SMS / iMessage'),
-              onTap: () {
-                Navigator.pop(context);
-                ShareService.shareSms(file);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -187,8 +286,11 @@ class _ExportScreenState extends State<ExportScreen> {
             onSelected: (value) async {
               final messenger = ScaffoldMessenger.of(context);
               if (value == 'save') {
-                await SettingsService.save(
-                    Settings(quality: _quality, mode: _mode));
+                await SettingsService.save(Settings(
+                  quality: _quality,
+                  mode: _mode,
+                  shareProfile: _shareProfile,
+                ));
                 if (!mounted) return;
                 messenger.showSnackBar(
                     const SnackBar(content: Text('Saved as default')));
@@ -198,6 +300,7 @@ class _ExportScreenState extends State<ExportScreen> {
                 setState(() {
                   _quality = s.quality;
                   _mode = s.mode;
+                  _shareProfile = s.shareProfile;
                 });
                 messenger.showSnackBar(
                     const SnackBar(content: Text('Loaded defaults')));
@@ -215,8 +318,7 @@ class _ExportScreenState extends State<ExportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_receiptLoading)
-              const LinearProgressIndicator(minHeight: 2),
+            if (_receiptLoading) const LinearProgressIndicator(minHeight: 2),
             if (_receiptError != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -247,6 +349,24 @@ class _ExportScreenState extends State<ExportScreen> {
               divisions: 7,
               label: '$_quality',
               onChanged: (v) => setState(() => _quality = v.toInt()),
+            ),
+            const SizedBox(height: 16),
+            const Text('Share profile'),
+            const SizedBox(height: 8),
+            SegmentedButton<ShareProfile>(
+              segments: const [
+                ButtonSegment(
+                  value: ShareProfile.standard,
+                  label: Text('Standard'),
+                ),
+                ButtonSegment(
+                  value: ShareProfile.compact,
+                  label: Text('Compact'),
+                ),
+              ],
+              selected: {_shareProfile},
+              onSelectionChanged: (s) =>
+                  setState(() => _shareProfile = s.first),
             ),
             const Spacer(),
             if (_lastPath != null)
@@ -322,8 +442,7 @@ class _ReceiptSummary extends StatelessWidget {
           children: [
             const Text('Receipt Intel',
                 style: TextStyle(fontWeight: FontWeight.bold)),
-            if (receipt.vendor != null)
-              Text('Vendor: ${receipt.vendor}'),
+            if (receipt.vendor != null) Text('Vendor: ${receipt.vendor}'),
             if (dateText != null) Text('Date: $dateText'),
             if (totalText != null) Text('Total: $totalText'),
             if (receipt.paymentMethod != null)

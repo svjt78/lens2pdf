@@ -63,7 +63,7 @@
 ### 4.4 PDF Generation & Searchability
 - PDF: `PDFKit` pages built from processed images; add selectable text layer positioned using OCR boxes.
 - Accessibility: Set correct reading order; add simple outlines/bookmarks per page; store extracted metadata in document info.
-- Local Search: Core Spotlight or SQLite FTS for vendor, totals, dates, tags; entirely on-device.
+- Local Search: Core Spotlight or SQLite FTS for vendor, totals, dates, tags; entirely on-device. Surface inline search in the library grid so users can filter by filenames, extracted receipt fields, or ID metadata without leaving the screen.
 
 ### 4.5 Security & Vault
 - Storage: App container with `NSFileProtectionComplete` for at-rest protection.
@@ -82,6 +82,7 @@
 ### 4.8 Sharing
 - `UIActivityViewController` with presets for Gmail, Google Drive, WhatsApp, SMS, AirDrop.
 - Share profiles preselect target-friendly formats (Standard/Share Safe/Compact) and filenames.
+- Attach structured JSON alongside each PDF plus a plain-text summary string so every share target (including Mail, Messages, WhatsApp, and AirDrop) receives both the document and its extracted metadata when available.
 
 ## 5) Data Model (Lightweight)
 - Receipt

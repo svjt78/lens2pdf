@@ -1,6 +1,7 @@
 package com.example.image_to_pdf_scanner
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -26,16 +27,23 @@ class MainActivity : FlutterActivity() {
                 "email" -> {
                     val subject = args["subject"] as? String ?: "My Scan"
                     val body = args["body"] as? String ?: ""
-                    shareEmail(path, subject, body)
+                    val summary = args["summaryText"] as? String ?: ""
+                    val metadataPath = args["metadataPath"] as? String
+                    val metadataMime = args["metadataMime"] as? String ?: "application/json"
+                    shareEmail(path, subject, body, summary, metadataPath, metadataMime)
                     result.success(null)
                 }
                 "sms" -> {
                     val body = args["body"] as? String ?: ""
-                    shareSms(path, body)
+                    val summary = args["summaryText"] as? String ?: ""
+                    val metadataPath = args["metadataPath"] as? String
+                    shareSms(path, body, summary, metadataPath)
                     result.success(null)
                 }
                 "whatsapp" -> {
-                    shareWhatsApp(path)
+                    val summary = args["summaryText"] as? String ?: ""
+                    val metadataPath = args["metadataPath"] as? String
+                    shareWhatsApp(path, summary, metadataPath)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -48,28 +56,84 @@ class MainActivity : FlutterActivity() {
         return FileProvider.getUriForFile(this, applicationContext.packageName + ".fileprovider", file)
     }
 
-    private fun shareEmail(path: String, subject: String, body: String) {
-        val uri = fileUri(path)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "message/rfc822"
-            putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, body)
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    private fun shareEmail(
+        path: String,
+        subject: String,
+        body: String,
+        summary: String,
+        metadataPath: String?,
+        metadataMime: String
+    ) {
+        val pdfUri = fileUri(path)
+        val metadataUri = metadataPath?.let { maybePath ->
+            val file = File(maybePath)
+            if (file.exists()) fileUri(file.path) else null
+        }
+        val uris = arrayListOf(pdfUri)
+        metadataUri?.let { uris.add(it) }
+
+        val composedBody = when {
+            body.isBlank() && summary.isNotBlank() -> summary
+            summary.isBlank() -> body
+            body.isBlank() -> summary
+            else -> "$body\n\n$summary"
+        }
+
+        val intent = if (uris.size > 1) Intent(Intent.ACTION_SEND_MULTIPLE) else Intent(Intent.ACTION_SEND)
+        intent.type = if (uris.size > 1) "*/*" else "application/pdf"
+        intent.putExtra(Intent.EXTRA_SUBJECT, subject)
+        intent.putExtra(Intent.EXTRA_TEXT, composedBody)
+        if (uris.size > 1) {
+            intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        } else {
+            intent.putExtra(Intent.EXTRA_STREAM, pdfUri)
+        }
+        val clip = ClipData.newUri(contentResolver, "pdf", pdfUri)
+        if (metadataUri != null) {
+            clip.addItem(ClipData.Item(metadataUri))
+            intent.type = "*/*"
+        }
+        intent.clipData = clip
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        metadataUri?.let {
+            intent.type = "*/*"
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/pdf", metadataMime))
         }
         startActivity(Intent.createChooser(intent, "Email"))
     }
 
-    private fun shareSms(path: String, body: String) {
-        val uri = fileUri(path)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/pdf"
-            putExtra(Intent.EXTRA_TEXT, body)
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            // Prefer Google Messages if available
-            setPackage("com.google.android.apps.messaging")
+    private fun shareSms(path: String, body: String, summary: String, metadataPath: String?) {
+        val pdfUri = fileUri(path)
+        val metadataUri = metadataPath?.let { maybePath ->
+            val file = File(maybePath)
+            if (file.exists()) fileUri(file.path) else null
         }
+        val uris = arrayListOf(pdfUri)
+        metadataUri?.let { uris.add(it) }
+
+        val composedBody = when {
+            body.isBlank() && summary.isNotBlank() -> summary
+            summary.isBlank() -> body
+            body.isBlank() -> summary
+            else -> "$body\n\n$summary"
+        }
+
+        val intent = if (uris.size > 1) Intent(Intent.ACTION_SEND_MULTIPLE) else Intent(Intent.ACTION_SEND)
+        intent.type = if (uris.size > 1) "*/*" else "application/pdf"
+        intent.putExtra(Intent.EXTRA_TEXT, composedBody)
+        if (uris.size > 1) {
+            intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        } else {
+            intent.putExtra(Intent.EXTRA_STREAM, pdfUri)
+        }
+        val clip = ClipData.newUri(contentResolver, "pdf", pdfUri)
+        if (metadataUri != null) {
+            clip.addItem(ClipData.Item(metadataUri))
+            intent.type = "*/*"
+        }
+        intent.clipData = clip
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.setPackage("com.google.android.apps.messaging")
         try {
             startActivity(intent)
         } catch (e: ActivityNotFoundException) {
@@ -77,14 +141,31 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun shareWhatsApp(path: String) {
-        val uri = fileUri(path)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/pdf"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            setPackage("com.whatsapp")
+    private fun shareWhatsApp(path: String, summary: String, metadataPath: String?) {
+        val pdfUri = fileUri(path)
+        val metadataUri = metadataPath?.let { maybePath ->
+            val file = File(maybePath)
+            if (file.exists()) fileUri(file.path) else null
         }
+        val uris = arrayListOf(pdfUri)
+        metadataUri?.let { uris.add(it) }
+
+        val intent = if (uris.size > 1) Intent(Intent.ACTION_SEND_MULTIPLE) else Intent(Intent.ACTION_SEND)
+        intent.type = if (uris.size > 1) "*/*" else "application/pdf"
+        intent.putExtra(Intent.EXTRA_TEXT, summary)
+        if (uris.size > 1) {
+            intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        } else {
+            intent.putExtra(Intent.EXTRA_STREAM, pdfUri)
+        }
+        val clip = ClipData.newUri(contentResolver, "pdf", pdfUri)
+        if (metadataUri != null) {
+            clip.addItem(ClipData.Item(metadataUri))
+            intent.type = "*/*"
+        }
+        intent.clipData = clip
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.setPackage("com.whatsapp")
         try {
             startActivity(intent)
         } catch (e: ActivityNotFoundException) {

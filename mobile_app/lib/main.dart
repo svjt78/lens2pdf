@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'screens/home_shell.dart';
 import 'screens/library_screen.dart';
 import 'screens/capture_screen.dart';
 import 'screens/review_screen.dart';
@@ -23,9 +24,10 @@ class ScannerApp extends StatelessWidget {
     return MaterialApp(
       title: 'Image to PDF Scanner',
       theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
-      initialRoute: LibraryScreen.route,
+      initialRoute: HomeShell.route,
       navigatorObservers: [routeObserver],
       routes: {
+        HomeShell.route: (_) => const HomeShell(),
         LibraryScreen.route: (_) => const LibraryScreen(),
         CaptureScreen.route: (_) => const CaptureScreen(),
         ReviewScreen.route: (_) => const ReviewScreen(),

@@ -17,6 +17,8 @@ class ReceiptIntelResult {
   final String? paymentMethod;
   final String? last4;
   final double confidence;
+  final List<String> tags;
+  final String? notes;
 
   const ReceiptIntelResult({
     this.vendor,
@@ -27,6 +29,8 @@ class ReceiptIntelResult {
     this.paymentMethod,
     this.last4,
     this.confidence = 0.0,
+    this.tags = const [],
+    this.notes,
   });
 
   Map<String, dynamic> toJson() => {
@@ -41,6 +45,8 @@ class ReceiptIntelResult {
         'paymentMethod': paymentMethod,
         'last4': last4,
         'confidence': confidence,
+        'tags': tags,
+        'notes': notes,
       };
 }
 
@@ -55,7 +61,8 @@ class ReceiptIntelService {
 
   static final _currencyRegex = RegExp(r'(\d+[\.,]\d{2})');
   static final _dateRegex = RegExp(r'(\d{1,4}[\-/]\d{1,2}[\-/]\d{1,4})');
-  static final _cardRegex = RegExp(r'(?:x{2,}|\*{2,}|#)(\d{4})', caseSensitive: false);
+  static final _cardRegex =
+      RegExp(r'(?:x{2,}|\*{2,}|#)(\d{4})', caseSensitive: false);
 
   static const _totalKeywords = [
     'grand total',

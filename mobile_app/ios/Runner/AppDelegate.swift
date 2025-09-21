@@ -19,18 +19,52 @@ import MessageUI
         result(FlutterError(code: "BAD_ARGS", message: "missing path", details: nil)); return
       }
       let url = URL(fileURLWithPath: path)
+      let summary = (args["summaryText"] as? String) ?? ""
+      let metadataPath = args["metadataPath"] as? String
+      let metadataURL: URL?
+      if let metadataPath, FileManager.default.fileExists(atPath: metadataPath) {
+        metadataURL = URL(fileURLWithPath: metadataPath)
+      } else {
+        metadataURL = nil
+      }
+      let metadataMime = (args["metadataMime"] as? String) ?? "application/json"
       switch call.method {
       case "email":
         let subject = (args["subject"] as? String) ?? "My Scan"
         let body = (args["body"] as? String) ?? ""
-        self.shareEmail(url: url, subject: subject, body: body, result: result)
+        self.shareEmail(
+          url: url,
+          subject: subject,
+          body: body,
+          summary: summary,
+          metadataURL: metadataURL,
+          metadataMime: metadataMime,
+          result: result
+        )
       case "sms":
         let body = (args["body"] as? String) ?? ""
-        self.shareSms(url: url, body: body, result: result)
+        self.shareSms(
+          url: url,
+          body: body,
+          summary: summary,
+          metadataURL: metadataURL,
+          metadataMime: metadataMime,
+          result: result
+        )
       case "whatsapp":
-        self.shareWhatsApp(url: url, result: result)
+        self.shareWhatsApp(
+          url: url,
+          summary: summary,
+          metadataURL: metadataURL,
+          result: result
+        )
       case "airdrop":
-        self.shareAirdrop(url: url, result: result)
+        self.shareAirdrop(
+          url: url,
+          summary: summary,
+          metadataURL: metadataURL,
+          result: result
+        )
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -43,53 +77,133 @@ import MessageUI
   }
 
   // MARK: - Email
-  private func shareEmail(url: URL, subject: String, body: String, result: FlutterResult) {
+  private func shareEmail(
+    url: URL,
+    subject: String,
+    body: String,
+    summary: String,
+    metadataURL: URL?,
+    metadataMime: String?,
+    result: FlutterResult
+  ) {
+    let composedBody: String
+    if body.isEmpty {
+      composedBody = summary
+    } else if summary.isEmpty {
+      composedBody = body
+    } else {
+      composedBody = "\(body)\n\n\(summary)"
+    }
+
     if MFMailComposeViewController.canSendMail() {
       let mail = MFMailComposeViewController()
       mail.mailComposeDelegate = self
       mail.setSubject(subject)
-      mail.setMessageBody(body, isHTML: false)
+      mail.setMessageBody(composedBody, isHTML: false)
       if let data = try? Data(contentsOf: url) {
         mail.addAttachmentData(data, mimeType: "application/pdf", fileName: url.lastPathComponent)
+      }
+      if let metadataURL, let data = try? Data(contentsOf: metadataURL) {
+        let filename = metadataURL.lastPathComponent
+        let mime = metadataMime ?? "application/json"
+        mail.addAttachmentData(data, mimeType: mime, fileName: filename)
       }
       present(mail)
       result(nil)
     } else {
       // Fallback to activity view limited to Mail
-      let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+      var items: [Any] = [url]
+      if let metadataURL {
+        items.append(metadataURL)
+      }
+      if !summary.isEmpty {
+        items.append(summary)
+      }
+      let av = UIActivityViewController(activityItems: items, applicationActivities: nil)
       present(av)
       result(nil)
     }
   }
 
   // MARK: - SMS / iMessage
-  private func shareSms(url: URL, body: String, result: FlutterResult) {
+  private func shareSms(
+    url: URL,
+    body: String,
+    summary: String,
+    metadataURL: URL?,
+    metadataMime: String?,
+    result: FlutterResult
+  ) {
+    let composedBody: String
+    if body.isEmpty {
+      composedBody = summary
+    } else if summary.isEmpty {
+      composedBody = body
+    } else {
+      composedBody = "\(body)\n\n\(summary)"
+    }
+
     if MFMessageComposeViewController.canSendText() {
       let sms = MFMessageComposeViewController()
       sms.messageComposeDelegate = self
-      sms.body = body
+      sms.body = composedBody
       if MFMessageComposeViewController.canSendAttachments() {
         sms.addAttachmentURL(url, withAlternateFilename: url.lastPathComponent)
+        if let metadataURL {
+          let filename = metadataURL.lastPathComponent
+          sms.addAttachmentURL(metadataURL, withAlternateFilename: filename)
+        }
       }
       present(sms)
       result(nil)
     } else {
-      let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+      var items: [Any] = [url]
+      if let metadataURL {
+        items.append(metadataURL)
+      }
+      if !summary.isEmpty {
+        items.append(summary)
+      }
+      let av = UIActivityViewController(activityItems: items, applicationActivities: nil)
       present(av)
       result(nil)
     }
   }
 
   // MARK: - WhatsApp (best-effort via ActivityViewController)
-  private func shareWhatsApp(url: URL, result: FlutterResult) {
-    let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+  private func shareWhatsApp(
+    url: URL,
+    summary: String,
+    metadataURL: URL?,
+    result: FlutterResult
+  ) {
+    var items: [Any] = [url]
+    if let metadataURL {
+      items.append(metadataURL)
+    }
+    if !summary.isEmpty {
+      items.append(summary)
+    }
+    let av = UIActivityViewController(activityItems: items, applicationActivities: nil)
     present(av)
     result(nil)
   }
 
   // MARK: - AirDrop only
-  private func shareAirdrop(url: URL, result: FlutterResult) {
-    let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+  private func shareAirdrop(
+    url: URL,
+    summary: String,
+    metadataURL: URL?,
+    result: FlutterResult
+  ) {
+    var items: [Any] = [url]
+    if let metadataURL {
+      items.append(metadataURL)
+    }
+    if !summary.isEmpty {
+      items.append(summary)
+    }
+    let av = UIActivityViewController(activityItems: items, applicationActivities: nil)
     if #available(iOS 13.0, *) {
       av.excludedActivityTypes = [.addToReadingList, .assignToContact, .copyToPasteboard, .markupAsPDF, .openInIBooks, .postToFacebook, .postToFlickr, .postToTencentWeibo, .postToTwitter, .postToVimeo, .postToWeibo, .print, .saveToCameraRoll, .message, .mail]
     }

@@ -60,7 +60,7 @@ class PdfService {
     final y = now.year.toString().padLeft(4, '0');
     final m = now.month.toString().padLeft(2, '0');
     final d = now.day.toString().padLeft(2, '0');
-    final parts = <String>['${y}${m}${d}'];
+    final parts = <String>['$y$m$d'];
     if (receipt?.vendor != null) {
       final vendor = receipt!.vendor!
           .trim()
